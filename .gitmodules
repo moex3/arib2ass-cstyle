@@ -1,0 +1,9 @@
+[submodule "subm/libaribcaption"]
+	path = subm/libaribcaption
+	url = https://github.com/xqq/libaribcaption
+[submodule "subm/toml-c"]
+	path = subm/toml-c
+	url = https://github.com/arp242/toml-c
+[submodule "subm/getopt-win"]
+	path = subm/getopt-win
+	url = https://github.com/ludvikjerabek/getopt-win
