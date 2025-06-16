@@ -233,7 +233,7 @@ static enum error parse_toml(toml_table_t *toml)
         opt_output = u8PCmem(val.u.s);
     }
 
-    val = toml_table_string(toml, "loggin");
+    val = toml_table_string(toml, "logging");
     if (val.ok) {
         if (strcmp(val.u.s, "verbose") == 0) {
             opt_log_level = LOG_DEBUG;
