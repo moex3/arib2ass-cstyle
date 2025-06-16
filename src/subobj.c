@@ -1,5 +1,6 @@
 #include "subobj.h"
 #include <assert.h>
+#include <fcntl.h>
 
 #include <stdio.h>
 #define STB_DS_IMPLEMENTATION
@@ -7,16 +8,7 @@
 
 #include "log.h"
 #include "util.h"
-
-struct drcs_map {
-    const char *md5;
-    uint32_t ucs4;
-};
-/* Custom DRCS replacing on top of what libaribcaption already does */
-static const struct drcs_map drcs_replace[] = {
-    {"06cb56043b9c4006bcfbe07cc831feaf", 0x1F50A},
-    {"063c95566807d5e7b51ab706426bedf9", 0x1F4F1},
-};
+#include "drcs.h"
 
 static void arib_log_cb(aribcc_loglevel_t level, const char* message, void* userdata)
 {
@@ -99,54 +91,6 @@ void subobj_caption_region_copy(struct subobj_caption_region *dst, const struct 
     }
 }
 
-static void aribcc_caption_char_replace_drcs(aribcc_caption_char_t *chr, aribcc_drcsmap_t *drcs_map)
-{
-    /* libaribcaption does not support adding new or custom drcs mappings.
-     * maybe i should add it?
-     * anyway, hack it here for now */
-    assert(chr->type == ARIBCC_CHARTYPE_DRCS);
-
-    /* To convert the raw pixel data to an image:
-     * convert -depth [bit_dept] -size [width]x[height] gray:drcs.bin out.png
-    int w, h, d, dp;
-    uint8_t *px;
-    size_t pxsize;
-    char buf[128];
-    const char *md5;
-    aribcc_drcs_t *dr = aribcc_drcsmap_get(drcs_map, chr->ref->drcs_code);
-    assert(dr);
-    aribcc_drcs_get_size(dr, &w, &h);
-    aribcc_drcs_get_depth(dr, &d, &dp),
-    aribcc_drcs_get_pixels(dr, &px, &pxsize);
-    md5 = aribcc_drcs_get_md5(dr);
-    sprintf(buf, "./dr/%dx%dx%dx%sx%d.bin", w, h, dp, md5, chr->ref->type);
-    printf("Writing drcs to: %s\n", buf);
-    FILE *f = fopen(buf, "wb");
-    fwrite(px, 1, pxsize, f);
-    fclose(f);
-    */
-
-    aribcc_drcs_t *d = aribcc_drcsmap_get(drcs_map, chr->drcs_code);
-    assert(d);
-    const char *md5 = aribcc_drcs_get_md5(d);
-    for (int i = 0; i < ARRAY_COUNT(drcs_replace); i++) {
-        if (strcmp(drcs_replace[i].md5, md5) == 0) {
-            chr->type = ARIBCC_CHARTYPE_DRCS_REPLACED;
-            chr->codepoint = drcs_replace[i].ucs4;
-            unicode_to_utf8(drcs_replace[i].ucs4, chr->u8str);
-#ifdef _WIN32
-            pchar replstr[8];
-            _snwprintf(replstr, ARRAY_COUNT(replstr), L"%s", u8PC(chr->u8str));
-            log_info("Replaced drcs %s to %s\n", u8PC(md5), replstr);
-#else
-            log_info("Replaced drcs %s to %s\n", md5, chr->u8str);
-#endif
-            return;
-        }
-    }
-    log_warning("Found no drcs replace char for %s\n", u8PC(md5));
-}
-
 static void aribcc_caption_char_copy_to_so(struct subobj_caption_char *dst, const aribcc_caption_char_t *src)
 {
     *dst = (struct subobj_caption_char){
@@ -163,7 +107,7 @@ static void aribcc_caption_char_copy_to_so(struct subobj_caption_char *dst, cons
     };
 }
 
-static void aribcc_caption_region_copy_to_so_drcs_replace(struct subobj_caption_region *dst, aribcc_caption_region_t *src, aribcc_drcsmap_t *drcs)
+static void aribcc_caption_region_copy_to_so_drcs_replace(struct subobj_caption_region *dst, aribcc_caption_region_t *src, aribcc_drcsmap_t *drmap)
 {
     *dst = (struct subobj_caption_region){
         .ref = src,
@@ -180,7 +124,7 @@ static void aribcc_caption_region_copy_to_so_drcs_replace(struct subobj_caption_
         aribcc_caption_char_t *src_char = &src->chars[j];
 
         if (src_char->type == ARIBCC_CHARTYPE_DRCS)
-            aribcc_caption_char_replace_drcs(src_char, drcs);
+            drcs_replace(drmap, src_char);
 
         aribcc_caption_char_copy_to_so(dst_char, src_char);
     }

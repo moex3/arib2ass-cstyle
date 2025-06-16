@@ -19,6 +19,7 @@
 #include "util.h"
 #include "platform.h"
 #include "opts.h"
+#include "drcs.h"
 
 struct decode_ctx {
     struct subobj_ctx *sctx;
@@ -179,6 +180,14 @@ int fnmain(int argc, pchar **argv)
         if (err != NOERR) {
             had_error = true;
             goto end;
+        }
+
+        if (opt_dump_drcs) {
+            err = drcs_dump(&sctx);
+            if (err != NOERR) {
+                had_error = true;
+                goto end;
+            }
         }
 
         if (opt_srt_do) {

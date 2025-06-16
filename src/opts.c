@@ -19,6 +19,7 @@
 static pchar *opt_output = NULL;
 static pchar *opt_dump_config = NULL;
 enum log_level opt_log_level = LOG_MSG;
+bool opt_dump_drcs = false;
 
 bool opt_ass_do = false;
 const pchar *opt_ass_font_path = NULL;
@@ -56,6 +57,7 @@ enum short_opts {
     SOPT_OUTPUT = 'o',
     SOPT_VERBOSE = 'v',
     SOPT_QUIET = 'q',
+    SOPT_DUMP_DRCS = 0x102,
     SOPT_ASS_NO_OPTIMIZE = 'Z',
     SOPT_ASS_FORCE_BOLD = 'b',
     SOPT_ASS_FORCE_BORDER = 'B',
@@ -81,6 +83,7 @@ static const struct option arg_options_pre[] = {
     { PSTR("output"),      required_argument, NULL, SOPT_OUTPUT },
     { PSTR("verbose"),     no_argument,       NULL, SOPT_VERBOSE },
     { PSTR("quiet"),       no_argument,       NULL, SOPT_QUIET },
+    { PSTR("dump-drcs"),   no_argument,       NULL, SOPT_DUMP_DRCS },
     { 0 },
 };
 
@@ -127,6 +130,7 @@ static void print_help()
             PSTR("  -o   --output             Output for all outputs (should be a directory)\n")
             PSTR("  -v   --verbose            Verbose output\n")
             PSTR("  -q   --quiet              Quiet output\n")
+            PSTR("       --dump-drcs          Write all drcs pixel data found to ./drcs/\n")
             PSTR("\n")
             PSTR("ASS OPTIONS:\n")
             PSTR("  -o   --output             Output resulting file into this path, or directory\n")
@@ -192,6 +196,8 @@ static enum error dump_config(const pchar *outfile)
     else if (opt_log_level == LOG_ERROR)
         fprintf(f, "logging = %s\n", "\"quiet\"");
 
+    fprintf(f, "dump-drcs = %s\n", B8(opt_dump_drcs));
+
     if (opt_ass_do) {
 
         fprintf(f, "\n[ass]\n");
@@ -241,6 +247,11 @@ static enum error parse_toml(toml_table_t *toml)
             opt_log_level = LOG_ERROR;
         }
         free(val.u.s);
+    }
+
+    val = toml_table_bool(toml, "dump-drcs");
+    if (val.ok) {
+        opt_dump_drcs = val.u.b;
     }
 
     subt = toml_table_table(toml, "ass");
@@ -396,6 +407,9 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
         case SOPT_QUIET:
             opt_log_level = LOG_ERROR;
             break;
+        case SOPT_DUMP_DRCS:
+            opt_dump_drcs = true;
+            break;
         case SOPT_HELP:
             print_help();
             return ERR_OPT_SHOULD_EXIT;
@@ -510,7 +524,7 @@ static enum error parse_srt_opts(int argc, pchar **argv)
 
 enum error opt_check_valid()
 {
-    if (opt_ass_do == false && opt_srt_do == false) {
+    if ((opt_ass_do == false && opt_srt_do == false) && (opt_dump_drcs == false)) {
         log_error("At least one output format needs to be specified\n");
         return ERR_OPT_BAD_ARG;
     }

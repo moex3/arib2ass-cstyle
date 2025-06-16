@@ -36,6 +36,9 @@ typedef wchar_t pchar;
 #define pperror _wperror
 #define pstrrchr wcsrchr
 #define pvfprintf vfwprintf
+#define plopen _wopen
+#define plclose _close
+#define plwrite _write
 
 /* Convert a pchar into an utf8 text using a static buffer */
 #define PCu8_BUFFER_SIZE 1024
@@ -91,6 +94,9 @@ typedef char pchar;
 #define pperror perror
 #define pfprintf fprintf
 #define pvfprintf vfprintf
+#define plopen open
+#define plclose close
+#define plwrite write
 
 #define PCu8(pc) (pc)
 #define u8PCmem(u8) (u8)

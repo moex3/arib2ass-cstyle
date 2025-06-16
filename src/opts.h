@@ -6,6 +6,7 @@
 #include "defs.h"
 
 extern enum log_level opt_log_level;
+extern bool opt_dump_drcs;
 
 extern bool opt_ass_do;
 extern const pchar *opt_ass_font_path;
