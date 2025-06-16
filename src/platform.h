@@ -7,7 +7,9 @@
 #include <BaseTsd.h>
 #include <Windows.h>
 #include <libavutil/error.h>
+#include <io.h>
 
+#define PATHSPECC L'\\'
 typedef wchar_t pchar;
 
 #define ssize_t SSIZE_T
@@ -69,6 +71,7 @@ pchar *platform_u8_to_pchar_mem(char *in);
 #define PLATFORM_CURRENT_TIMESPEC(otsp) (clock_gettime(CLOCK_MONOTONIC_COARSE, otsp))
 #define fnmain main
 
+#define PATHSPECC '/'
 typedef char pchar;
 
 #define PSTR(s) s

@@ -53,7 +53,7 @@ static void setup_output_path(pchar path[256])
         return;
     }
 
-    sep = pstrrchr(path, PSTR('/'));
+    sep = pstrrchr(path, PATHSPECC);
     if (sep == NULL)
         return;
     *sep = PSTR('\0');
@@ -63,7 +63,7 @@ static void setup_output_path(pchar path[256])
         pperror(PSTR("Cannot mkdir"));
         assert(false);
     }
-    *sep = PSTR('/');
+    *sep = PATHSPECC;
 }
 
 static void create_output_path(enum output_type ot, const pchar *input, pchar out[256])
@@ -109,7 +109,7 @@ static void create_output_path(enum output_type ot, const pchar *input, pchar ou
     }
 
     mkdir_p(outpath);
-    psnprintf(out, 256, PSTR("%s/%.*s%s"), outpath, (int)blen, bn, ext[ot]);
+    psnprintf(out, 256, PSTR("%s%c%.*s%s"), outpath, PATHSPECC, (int)blen, bn, ext[ot]);
 end:
     return;
 }
