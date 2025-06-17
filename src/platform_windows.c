@@ -12,7 +12,18 @@ wchar_t w_av_errbuf[AV_ERROR_MAX_STRING_SIZE];
 
 int mkdir_p(const pchar *path)
 {
-	return SHCreateDirectoryExW(NULL, path, NULL);
+	pchar abp[MAX_PATH];
+
+	if (PathIsRelativeW(path)) {
+		/* SHCreateDirectoryExW only accepts an absolute path */
+		path = _wfullpath(abp, path, ARRAY_COUNT(abp));
+		if (path == NULL)
+			return ERROR_FILENAME_EXCED_RANGE;
+	}
+	int r = SHCreateDirectoryExW(NULL, path, NULL);
+	if (r == ERROR_SUCCESS || r == ERROR_ALREADY_EXISTS)
+		return 0;
+	return r;
 }
 
 pchar *basename(pchar *path)

@@ -8,6 +8,7 @@
 #include <Windows.h>
 #include <libavutil/error.h>
 #include <io.h>
+#include <shlwapi.h>
 
 #define PATHSPECC L'\\'
 typedef wchar_t pchar;

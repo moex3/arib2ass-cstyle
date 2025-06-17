@@ -61,6 +61,7 @@ static void setup_output_path(pchar path[256])
 
     n = mkdir_p(path);
     if (n != 0) {
+        /* TODO: fix error mismatch */
         pperror(PSTR("Cannot mkdir"));
         assert(false);
     }
@@ -69,7 +70,7 @@ static void setup_output_path(pchar path[256])
 
 static void create_output_path(enum output_type ot, const pchar *input, pchar out[256])
 {
-    pchar buf[256];
+    pchar buf[512];
     const pchar *ext[] = {
         [ASS] = PSTR(".ass"),
         [SRT] = PSTR(".srt"),
@@ -85,11 +86,22 @@ static void create_output_path(enum output_type ot, const pchar *input, pchar ou
         outpath = opt_srt_output;
     } else {
         assert(false);
+        exit(1);
         return;
     }
 
+#ifdef _WIN32
+    pchar norm_outpath[512];
+    int clen = psnprintf(norm_outpath, sizeof(norm_outpath), L"%s", outpath);
+    assert(clen < ARRAY_COUNT(norm_outpath));
+    for (int i = 0; i < clen; i++)
+        if (norm_outpath[i] == L'/') norm_outpath[i] = L'\\';
+#else
+    const pchar *norm_outpath = outpath;
+#endif
+
     if (isdir == false) {
-        psnprintf(out, 256, PSTR("%s"), outpath);
+        psnprintf(out, 256, PSTR("%s"), norm_outpath);
         setup_output_path(out);
         goto end;
     }
@@ -109,8 +121,8 @@ static void create_output_path(enum output_type ot, const pchar *input, pchar ou
         blen -= tsextclen;
     }
 
-    mkdir_p(outpath);
-    psnprintf(out, 256, PSTR("%s%c%.*s%s"), outpath, PATHSPECC, (int)blen, bn, ext[ot]);
+    mkdir_p(norm_outpath);
+    psnprintf(out, 256, PSTR("%s%c%.*s%s"), norm_outpath, PATHSPECC, (int)blen, bn, ext[ot]);
 end:
     return;
 }

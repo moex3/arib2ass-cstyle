@@ -553,8 +553,18 @@ enum error opt_check_valid()
                 opt_ass_output_dir = arrlen(opt_input_files) > 1;
             } else {
                 pperror(PSTR("Failed to check output path"));
-                assert(false);
+                return ERR_OPT_BAD_ARG;
             }
+
+            pchar lchar = get_str_last_char(opt_ass_output);
+            if (lchar == PSTR('/')) {
+                opt_ass_output_dir = true;
+#ifdef _WIN32
+            } else if (lchar == PSTR('\\')) {
+                opt_ass_output_dir = true;
+#endif
+            }
+
         } else if (!S_ISDIR(s.st_mode) && arrlen(opt_input_files) > 1) {
             log_error("Output for .ass multi-file is not a directory\n");
             return ERR_OPT_BAD_ARG;
@@ -570,8 +580,18 @@ enum error opt_check_valid()
                 opt_srt_output_dir = arrlen(opt_input_files) > 1;
             } else {
                 pperror(PSTR("Failed to check output path"));
-                assert(false);
+                return ERR_OPT_BAD_ARG;
             }
+
+            pchar lchar = get_str_last_char(opt_srt_output);
+            if (lchar == PSTR('/')) {
+                opt_srt_output_dir = true;
+#ifdef _WIN32
+            } else if (lchar == PSTR('\\')) {
+                opt_srt_output_dir = true;
+#endif
+            }
+
         } else if (!S_ISDIR(s.st_mode) && arrlen(opt_input_files) > 1) {
             log_error("Output for .srt multi-file is not a directory\n");
             return ERR_OPT_BAD_ARG;

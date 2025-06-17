@@ -64,4 +64,6 @@ int util_find_chars_for_furi(const struct subobj *so, struct chars_for_furi_resu
 
 void util_ms_to_htime(int64_t tms, pchar out[32]);
 
+pchar get_str_last_char(const pchar *str);
+
 #endif /* ARIB2ASS_UTIL_H */

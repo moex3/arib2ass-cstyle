@@ -270,3 +270,10 @@ void util_ms_to_htime(int64_t tms, pchar out[32])
     psnprintf(out, 32, PSTR("%02") PSTR2(PRId64) PSTR(":%02") PSTR2(PRId64)
             PSTR(":%02") PSTR2(PRId64) PSTR(".%03") PSTR2(PRId64), h, m, s, ms);
 }
+
+pchar get_str_last_char(const pchar *str)
+{
+    if (str == NULL || str[0] == PSTR('\0'))
+        return PSTR('\0');
+    return str[pstrlen(str) - 1];
+}
