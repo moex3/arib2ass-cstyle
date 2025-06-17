@@ -16,8 +16,10 @@ struct drcs_map {
 };
 /* Custom DRCS replacing on top of what libaribcaption already does */
 static const struct drcs_map drcs_replace_map[] = {
-    {"06cb56043b9c4006bcfbe07cc831feaf", 0x1F50A},
     {"063c95566807d5e7b51ab706426bedf9", 0x1F4F1},
+    {"06cb56043b9c4006bcfbe07cc831feaf", 0x1F50A},
+    {"3830a0e0148cfb20309ed54d89472156", 0x1F4DE},
+    {"df055ddbbdbb84d22900081137c070b0", 0x1F5A5},
 };
 
 
