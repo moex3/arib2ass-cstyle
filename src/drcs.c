@@ -20,6 +20,12 @@ static const struct drcs_map drcs_replace_map[] = {
     {"06cb56043b9c4006bcfbe07cc831feaf", 0x1F50A},
     {"3830a0e0148cfb20309ed54d89472156", 0x1F4DE},
     {"df055ddbbdbb84d22900081137c070b0", 0x1F5A5},
+    {"68fc649b4a57a6103a25dc678fcec9f4", 0x1F4F1},
+    {"804a5bcdcbf1ba977c92d3d58a1cdfe1", 0x1F50A},
+    {"5063561406195ca45f5992e3f7ad77d2", 0xFF5F},
+    {"d84fc83615b75802ed422eda4ba39465", 0xFF60},
+    {"4ba716a88c003ca0a069392be3b63951", 0x27A1},
+    {"fe720d2a491d8a4441151c49cd8ab4f6", 0x1F5B3},
 };
 
 
