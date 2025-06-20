@@ -122,7 +122,7 @@ enum error tsdecode_open_file(const pchar *fpath, struct tsdecode *out)
     find_stream_infos(avformat_context, &caption_stream_idx, &video_stream_idx);
     if (caption_stream_idx == -1 || video_stream_idx == -1) {
         log_error("caption stream not found in file\n");
-        avformat_close_input(&avformat_context);
+        tsdecode_free(out);
         return ERR_NO_CAPTION_STREAM;
     }
     log_info("ARIB Caption stream was found at index: %d\n", caption_stream_idx);

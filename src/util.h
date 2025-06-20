@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <time.h>
+#include <stdbool.h>
 #include <aribcaption/aribcaption.h>
 #include "subobj.h"
 #include "platform.h"
@@ -29,10 +30,11 @@
     PLATFORM_CURRENT_TIMESPEC(&__b_ ## id); \
     outms = (__b_ ## id.tv_sec - __a_ ## id.tv_sec) * 1000 + ((__b_ ## id.tv_nsec - __a_ ## id.tv_nsec) / 1000000)
 
-/* Returns the byte length of the utf8 character in 'chr'
- * Only pass well-formed utf8 characters here
- */
-void   unicode_to_utf8(char32_t cp, char u8[8]);
+/*
+ * unicode codepoints to utf8 and back converters */
+void     unicode_to_utf8(char32_t cp, char u8[8]);
+/* Only pass valid u8 char in here!, returns 0 on error */
+char32_t utf8_to_unicode(const char *u8);
 
 void arrmovelem(void *arr, intptr_t elem_idx, intptr_t to_idx, size_t elem_size);
 

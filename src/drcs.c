@@ -3,19 +3,21 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <ctype.h>
 
 #include "drcs.h"
 #include "log.h"
 #include "util.h"
-#include "opts.h"
 #include "platform.h"
+#include "opts.h"
 
-struct drcs_map {
-    const char *md5;
-    uint32_t ucs4;
+
+struct drcs_conv {
+    char *key;
+    char32_t value;
 };
 /* Custom DRCS replacing on top of what libaribcaption already does */
-static const struct drcs_map drcs_replace_map[] = {
+static const struct drcs_conv static_replace_map[] = {
     {"063c95566807d5e7b51ab706426bedf9", 0x1F4F1},
     {"06cb56043b9c4006bcfbe07cc831feaf", 0x1F50A},
     {"3830a0e0148cfb20309ed54d89472156", 0x1F4DE},
@@ -28,6 +30,13 @@ static const struct drcs_map drcs_replace_map[] = {
     {"fe720d2a491d8a4441151c49cd8ab4f6", 0x1F5B3},
 };
 
+/* Dynamic hash map of md5sum -> replacement codepoint for
+ * drcs values. Overrides static_replace_map */
+struct drcs_conv stb_hmap *dyn_replace_map = NULL;
+
+/* Character to use for default replacements
+ * 0 if not set */
+char32_t default_repl_char = 0;
 
 struct drcs_dump_info {
     int w, h, depth;
@@ -109,8 +118,8 @@ static void drcs_dump_char(aribcc_drcsmap_t *map, const aribcc_caption_char_t *c
     di.md5 = aribcc_drcs_get_md5(dr);
 
     if (di.replaced == false) {
-        for (int i = 0; i < ARRAY_COUNT(drcs_replace_map); i++) {
-            if (strcmp(drcs_replace_map[i].md5, di.md5) == 0) {
+        for (int i = 0; i < ARRAY_COUNT(static_replace_map); i++) {
+            if (strcmp(static_replace_map[i].key, di.md5) == 0) {
                 di.replaced = true;
                 break;
             }
@@ -139,6 +148,27 @@ enum error drcs_dump(const struct subobj_ctx *s)
     return NOERR;
 }
 
+static void drcs_replace_chr_with_codepoint(aribcc_caption_char_t *chr, const char *md5, char32_t codepoint)
+{
+    chr->type = ARIBCC_CHARTYPE_DRCS_REPLACED;
+    chr->codepoint = codepoint;
+    unicode_to_utf8(codepoint, chr->u8str);
+    if (opt_log_level <= LOG_INFO) {
+#ifdef _WIN32
+        pchar replstr[8];
+        _snwprintf(replstr, ARRAY_COUNT(replstr), L"%s", u8PC(chr->u8str));
+        log_info("Replaced drcs %s to %s\n", u8PC(md5), replstr);
+#else
+        log_info("Replaced drcs %s to %s\n", md5, chr->u8str);
+#endif
+    }
+    return;
+}
+
+/* Currently only those, that are not replaced by libaribcaption will
+ * be replaced here. So the replacement hierarchy goes
+ * libaribcaption -> custom user replacements -> custom static replacements -> 'all' replacement
+ */
 void drcs_replace(aribcc_drcsmap_t *drcs_map, aribcc_caption_char_t *chr)
 {
     /* libaribcaption does not support adding new or custom drcs mappings.
@@ -149,21 +179,140 @@ void drcs_replace(aribcc_drcsmap_t *drcs_map, aribcc_caption_char_t *chr)
     aribcc_drcs_t *d = aribcc_drcsmap_get(drcs_map, chr->drcs_code);
     assert(d);
     const char *md5 = aribcc_drcs_get_md5(d);
-    for (int i = 0; i < ARRAY_COUNT(drcs_replace_map); i++) {
-        if (strcmp(drcs_replace_map[i].md5, md5) == 0) {
-            chr->type = ARIBCC_CHARTYPE_DRCS_REPLACED;
-            chr->codepoint = drcs_replace_map[i].ucs4;
-            unicode_to_utf8(drcs_replace_map[i].ucs4, chr->u8str);
-#ifdef _WIN32
-            pchar replstr[8];
-            _snwprintf(replstr, ARRAY_COUNT(replstr), L"%s", u8PC(chr->u8str));
-            log_info("Replaced drcs %s to %s\n", u8PC(md5), replstr);
-#else
-            log_info("Replaced drcs %s to %s\n", md5, chr->u8str);
-#endif
+
+    const struct drcs_conv *di = shgetp_null(dyn_replace_map, md5);
+    if (di) {
+        drcs_replace_chr_with_codepoint(chr, md5, di->value);
+        return;
+    }
+
+    for (int i = 0; i < ARRAY_COUNT(static_replace_map); i++) {
+        if (strcmp(static_replace_map[i].key, md5) == 0) {
+            drcs_replace_chr_with_codepoint(chr, md5, static_replace_map[i].value);
             return;
         }
     }
-    log_warning("Found no drcs replace char for %s\n", u8PC(md5));
 
+    if (default_repl_char != 0) {
+        drcs_replace_chr_with_codepoint(chr, md5, default_repl_char);
+        return;
+    }
+
+    log_warning("Found no drcs replace char for %s\n", u8PC(md5));
+    return;
+}
+
+enum error drcs_add_mapping(const char *md5, char32_t codepoint)
+{
+    if (md5 != NULL) {
+        for (int i = 0; i < 32; i++) {
+            if (!(isxdigit(md5[i]))) {
+                log_warning("Skipping invalid drcs md5sum: %32s\n", u8PC(md5));
+                return ERR_INVALID_DRCS_REPLACEMENT;
+            }
+        }
+    }
+
+    if (opt_log_level <= LOG_DEBUG) {
+        char u8[8];
+        unicode_to_utf8(codepoint, u8);
+#ifdef _WIN32
+        pchar wc8[8];
+        psnprintf(wc8, ARRAY_COUNT(wc8), PSTR("%s"), u8PC(u8));
+        log_debug("Adding DRCS replacement character: %s => %s\n", u8PC(md5 ? md5 : "all"), wc8);
+#else
+        log_debug("Adding DRCS replacement character: %s => %s\n", md5 ? md5 : "all", u8);
+#endif
+    }
+
+    if (md5 == NULL) {
+        default_repl_char = codepoint;
+        return NOERR;
+    }
+
+    char *own_md5 = malloc(33);
+    assert(own_md5);
+    for (int i = 0; i < 32; i++)
+        own_md5[i] = tolower((unsigned char)md5[i]);
+    own_md5[32] = '\0';
+    shput(dyn_replace_map, own_md5, codepoint);
+
+    return NOERR;
+}
+
+enum error drcs_add_mapping_u8(const char *md5, const char *u8char)
+{
+    char32_t c = utf8_to_unicode(u8char);
+    if (c == 0) {
+        log_warning("Invalid UTF8 drcs replacement character\n");
+        return ERR_INVALID_DRCS_REPLACEMENT;
+    }
+
+    return drcs_add_mapping(md5, c);
+}
+
+void drcs_add_mapping_from_table(const toml_table_t *tbl)
+{
+    int tlen = toml_table_len(tbl);
+    for (int i = 0; i < tlen; i++) {
+        toml_value_t val;
+        int klen;
+        const char *key = toml_table_key(tbl, i, &klen);
+        const char *md5 = key;
+        if (klen != 32) {
+            if ((klen == 1 && strncmp(key, "*", 1) == 0) ||
+                    (klen == 3 && strncmp(key, "all", 3) == 0)) {
+                md5 = NULL; /* all */
+            } else {
+                log_debug("Skipping invalid key from drcs_conv table: %s\n", u8PC(key));
+                continue;
+            }
+        }
+
+        val = toml_table_int(tbl, key);
+        if (val.ok) {
+            drcs_add_mapping(md5, val.u.i);
+        } else {
+            val = toml_table_string(tbl, key);
+            if (val.ok) {
+                drcs_add_mapping_u8(md5, val.u.s);
+                free(val.u.s);
+            } else {
+                log_debug("Skipping invalid drcs_conv table value for key: %s\n", u8PC(key));
+                continue;
+            }
+        }
+    }
+}
+
+void drcs_add_mapping_from_file(const pchar *path)
+{
+    char errorbuf[256];
+    FILE *f = pfopen(path, PSTR("rb"));
+    if (f == NULL) {
+        log_warning("Failed to open drcs replacement file: '%s': %s\n",
+                path, pstrerror(errno));
+        return;
+    }
+
+	toml_table_t *toml = toml_parse_file(f, errorbuf, sizeof(errorbuf));
+    if (toml == NULL) {
+        log_error("Failed to parse drcs replacement file %s\n", u8PC(errorbuf));
+        fclose(f);
+        return;
+    }
+
+    drcs_add_mapping_from_table(toml);
+
+    toml_free(toml);
+    fclose(f);
+}
+
+
+void drcs_free()
+{
+    size_t len = shlenu(dyn_replace_map);
+    for (size_t i = 0; i < len; i++)
+        free((char*)dyn_replace_map[i].key);
+    shfree(dyn_replace_map);
 }

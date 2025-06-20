@@ -43,6 +43,45 @@ void unicode_to_utf8(char32_t cp, char u8[8])
 #endif
 }
 
+char32_t utf8_to_unicode(const char *u8)
+{
+    char32_t cp;
+#ifdef __linux__
+    mbstate_t s = {0};
+    static_assert(sizeof(char32_t) == sizeof(wchar_t));
+    size_t r = mbrtowc((wchar_t*)&cp, u8, MB_CUR_MAX, &s);
+    if (r == (size_t)-1 || r == (size_t)-2)
+        goto err;
+
+#else
+
+    // https://en.wikipedia.org/wiki/UTF-8
+    // Passes the tests from https://stackoverflow.com/questions/1301402/example-invalid-utf8-string
+    // except for codepoints outside of unicode, but w/e
+    cp = 0;
+    if ((unsigned char)u8[0] <= 0x7f)
+        return (char32_t)u8[0];
+
+    if ((u8[0] & 0xE0) == 0xC0) {
+        if ((u8[1] & 0xC0) != 0x80) goto err;
+        cp = ((u8[0] & 0x1F) << 6) | (u8[1] & 0x3F);
+    } else if ((u8[0] & 0xF0) == 0xE0) {
+        if ((u8[1] & 0xC0) != 0x80 || (u8[2] & 0xC0) != 0x80) goto err;
+        cp = ((u8[0] & 0x0F) << 12) | ((u8[1] & 0x3F) << 6) | (u8[2] & 0x3F);
+    } else if ((u8[0] & 0xF8) == 0xF0) {
+        if ((u8[1] & 0xC0) != 0x80 || (u8[2] & 0xC0) != 0x80 || (u8[3] & 0xC0) != 0x80) goto err;
+        cp = ((u8[0] & 0x07) << 21) | ((u8[1] & 0x3F) << 12) | ((u8[2] & 0x3F) << 6) | (u8[3] & 0x3F);
+    } else {
+        goto err;
+    }
+
+#endif
+
+    return cp;
+err:
+    return 0;
+}
+
 void arrmovelem(void *arr, intptr_t elem_idx, intptr_t to_idx, size_t elem_size)
 {
     char tmp[128];

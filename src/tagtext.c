@@ -208,9 +208,6 @@ static enum error parse_so_chars_to_events(struct tagtext_ctx *ctx, const struct
 
     assert(chr->ref->type != ARIBCC_CHARTYPE_DRCS);
 
-    //printf("Char: %s  scale x,y: %.02f,%.02f  x:%d y:%d  w:%d h:%d  sx:%d sy:%d\n",
-            //chr->u8str, chr->char_horizontal_scale, chr->char_vertical_scale, chr->x, chr->y, chr->char_width, chr->char_height, chr->char_horizontal_spacing, chr->char_vertical_spacing);
-
     all_styles_from_char(chr, current_styles);
     for (int i = 0; i < ARRAY_COUNT(current_styles); i++) {
         if (ctx->optimize) {
@@ -232,8 +229,6 @@ static enum error parse_so_chars_to_events(struct tagtext_ctx *ctx, const struct
         int changed_styles_count;
 
         assert(chr->ref->type != ARIBCC_CHARTYPE_DRCS);
-        //printf("Char: %s  scale x,y: %.02f,%.02f  x:%d y:%d  w:%d h:%d  sx:%d sy:%d\n",
-                //chr->u8str, chr->char_horizontal_scale, chr->char_vertical_scale, chr->x, chr->y, chr->char_width, chr->char_height, chr->char_horizontal_spacing, chr->char_vertical_spacing);
 
         /* Check for new styles */
         changed_styles_count = changed_styles_from_char(chr, current_styles, changed_styles);
@@ -277,8 +272,6 @@ static enum error parse_so_region(struct tagtext_ctx *ctx, const struct subobj_c
 {
     struct tagtext_event *new_events = NULL;
     enum error err;
-
-    //printf("Region x:%d y:%d  w:%d h:%d\n", region->x, region->y, region->width, region->height);
 
     err = parse_so_chars_to_events(ctx, region->so_chars, &new_events);
     if (err != NOERR) {

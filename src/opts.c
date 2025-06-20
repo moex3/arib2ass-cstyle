@@ -10,8 +10,7 @@
 #include "util.h"
 #include "log.h"
 #include "version.h"
-
-
+#include "drcs.h"
 
 #define B(arg)  ((arg) ? PSTR("true") : PSTR("false"))
 #define B8(arg) ((arg) ?     ("true") :     ("false"))
@@ -58,6 +57,7 @@ enum short_opts {
     SOPT_VERBOSE = 'v',
     SOPT_QUIET = 'q',
     SOPT_DUMP_DRCS = 0x102,
+    SOPT_DRCS_CONV = 'D',
     SOPT_ASS_NO_OPTIMIZE = 'Z',
     SOPT_ASS_FORCE_BOLD = 'b',
     SOPT_ASS_FORCE_BORDER = 'B',
@@ -75,7 +75,7 @@ enum short_opts {
 };
 
 /* '+' to stop processing args at the first non-opt argument */
-static const pchar arg_string_pre[] = PSTR("+c:o:hqv");
+static const pchar arg_string_pre[] = PSTR("+c:o:hqvD:");
 static const struct option arg_options_pre[] = {
     { PSTR("config-file"), required_argument, NULL, SOPT_CONFIG_FILE },
     { PSTR("dump-config"), required_argument, NULL, SOPT_DUMP_CONFIG },
@@ -84,6 +84,7 @@ static const struct option arg_options_pre[] = {
     { PSTR("verbose"),     no_argument,       NULL, SOPT_VERBOSE },
     { PSTR("quiet"),       no_argument,       NULL, SOPT_QUIET },
     { PSTR("dump-drcs"),   no_argument,       NULL, SOPT_DUMP_DRCS },
+    { PSTR("drcs-conv"),   required_argument, NULL, SOPT_DRCS_CONV },
     { 0 },
 };
 
@@ -131,6 +132,8 @@ static void print_help()
             PSTR("  -v   --verbose            Verbose output\n")
             PSTR("  -q   --quiet              Quiet output\n")
             PSTR("       --dump-drcs          Write all drcs pixel data found to ./drcs/\n")
+            PSTR("  -D   --drcs-conv          Accepts a toml file, which contains replacement mappings for drcs characters\n")
+            PSTR("                            Can be specified multiple times\n")
             PSTR("\n")
             PSTR("ASS OPTIONS:\n")
             PSTR("  -o   --output             Output resulting file into this path, or directory\n")
@@ -224,6 +227,9 @@ static enum error dump_config(const pchar *outfile)
         fprintf(f, "tags = %s\n", B8(opt_srt_tags));
         fprintf(f, "furi = %s\n", B8(opt_srt_furi));
     }
+
+    fprintf(f, "\n[drcs_conv]\n");
+    fprintf(f, "# \n");
 
     fclose(f);
     return NOERR;
@@ -339,6 +345,25 @@ static enum error parse_toml(toml_table_t *toml)
         }
     }
 
+    subt = toml_table_table(toml, "drcs_conv");
+    if (subt) {
+        toml_array_t *sarr = toml_table_array(subt, "files");
+        if (sarr) {
+            int alen = toml_array_len(sarr);
+            for (int i = 0; i < alen; i++) {
+                val = toml_array_string(sarr, i);
+                if (val.ok == false)
+                    continue;
+
+                pchar *ppath = u8PCmem(val.u.s);
+                drcs_add_mapping_from_file(ppath);
+                free(ppath);
+            }
+        }
+
+        drcs_add_mapping_from_table(subt);
+    }
+
     return NOERR;
 }
 
@@ -349,8 +374,7 @@ static enum error parse_config_file(const pchar *path)
     FILE *f = pfopen(path, PSTR("rb"));
 
     if (!f) {
-        enum error err = -errno;
-        log_error("Failed to open config file '%s': %s\n", path, error_to_string(err));
+        log_error("Failed to open config file '%s': %s\n", path, pstrerror(errno));
         return ERR_OPT_BAD_ARG;
     }
 
@@ -381,9 +405,13 @@ static void advance_input_files(int argc, pchar **argv)
 
 static enum error parse_config_global_opts(int argc, pchar **argv)
 {
+    enum error err = ERR_UNDEF;
+
+    pchar *stb_array *drcs_conv_files = NULL;
     const pchar *config_file_path = NULL;
     /* Don't print invalid option messages */
     opterr = 0;
+
 
     for (;;) {
         int c = getopt_long(argc, argv, arg_string_pre, arg_options_pre, NULL);
@@ -401,6 +429,9 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
             nnfree(opt_output);
             opt_output = pstrdup(optarg);
             break;
+        case SOPT_DRCS_CONV:
+            arrput(drcs_conv_files, pstrdup(optarg));
+            break;
         case SOPT_VERBOSE:
             opt_log_level = LOG_DEBUG;
             break;
@@ -412,13 +443,30 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
             break;
         case SOPT_HELP:
             print_help();
-            return ERR_OPT_SHOULD_EXIT;
+            err = ERR_OPT_SHOULD_EXIT;
+            goto end;
         }
     }
 
-    if (config_file_path)
-        return parse_config_file(config_file_path);
-    return NOERR;
+    if (config_file_path) {
+        err = parse_config_file(config_file_path);
+        if (err != NOERR)
+            goto end;
+    }
+
+    /* Add files from the cmd after the files from config files / config
+     * so the cmdline ones will override the ones from the files */
+    for (intptr_t i = 0; i < arrlen(drcs_conv_files); i++) {
+        drcs_add_mapping_from_file(drcs_conv_files[i]);
+    }
+
+    err = NOERR;
+end:
+    for (size_t i = 0; i < arrlenu(drcs_conv_files); i++) {
+        free(drcs_conv_files[i]);
+    }
+    arrfree(drcs_conv_files);
+    return err;
 }
 
 static enum error parse_ass_opts(int argc, pchar **argv)
@@ -625,7 +673,7 @@ enum error opts_parse_cmdline(int argc, pchar **argv)
     if (err != NOERR)
         goto fail;
 
-    /* Print invalid opton messages */
+    /* Print invalid option messages */
     opterr = 1;
 
     advance_input_files(argc, argv);
@@ -675,4 +723,8 @@ void opts_free()
         free(opt_ass_output);
     if (opt_srt_output)
         free(opt_srt_output);
+
+    /* It might make sense to free this here,
+     * as it is created by opts */
+    drcs_free();
 }

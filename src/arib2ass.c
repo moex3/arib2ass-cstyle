@@ -152,6 +152,7 @@ int fnmain(int argc, pchar **argv)
     }
 
     if (arrlen(opt_input_files) <= 0) {
+        log_error("No input files to process!\n");
         opts_free();
         return 1;
     }
