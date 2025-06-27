@@ -10,6 +10,7 @@
 #include "util.h"
 #include "platform.h"
 #include "opts.h"
+#include "png.h"
 
 
 struct drcs_conv {
@@ -20,13 +21,26 @@ struct drcs_conv {
 static const struct drcs_conv static_replace_map[] = {
     {"063c95566807d5e7b51ab706426bedf9", 0x1F4F1},
     {"06cb56043b9c4006bcfbe07cc831feaf", 0x1F50A},
+    {"170193c22e22a88904c34f3ec7129ddb", 0x1F5A5},
+    {"33d4c5243a45503d43fbb858a728664d", 0x1F4F1},
     {"3830a0e0148cfb20309ed54d89472156", 0x1F4DE},
-    {"df055ddbbdbb84d22900081137c070b0", 0x1F5A5},
-    {"68fc649b4a57a6103a25dc678fcec9f4", 0x1F4F1},
-    {"804a5bcdcbf1ba977c92d3d58a1cdfe1", 0x1F50A},
-    {"5063561406195ca45f5992e3f7ad77d2", 0xFF5F},
-    {"d84fc83615b75802ed422eda4ba39465", 0xFF60},
     {"4ba716a88c003ca0a069392be3b63951", 0x27A1},
+    {"5063561406195ca45f5992e3f7ad77d2", 0xFF5F},
+    {"516a7b4eb9de2841903301997e881e9d", 0x1F50A},
+    {"56b48663ae06a5545e5b233bb006cdf0", 0x1F4F1},
+    {"5c31e7978a711d0ca0469b294cb47ca6", 0x1F50A},
+    {"68fc649b4a57a6103a25dc678fcec9f4", 0x1F4F1},
+    {"6d5aa3ff99a144bd5138562787f58590", 0x1F4F1},
+    {"74d535ca9f47d57fd78234f7019a525e", 0x269F},
+    {"7542bc0875d546542d2435daa99821bb", 0x1F4F1},
+    {"804a5bcdcbf1ba977c92d3d58a1cdfe1", 0x1F50A},
+    {"86aed3fe53ad8f629253795c87452fab", 0x1F4F2},
+    {"a368b4ce2212ef80e2bf3d68559f5151", 0x1F4FA},
+    {"a97b575907c06f39c8ac0ed26c49e328", 0x1F4F1},
+    {"c35c7e6816e10be8304f2d876426c9e7", 0x1F4F1},
+    {"c42450812c184aee2ae01cc5e39ae957", 0x1F4FB},
+    {"d84fc83615b75802ed422eda4ba39465", 0xFF60},
+    {"df055ddbbdbb84d22900081137c070b0", 0x1F5A5},
     {"fe720d2a491d8a4441151c49cd8ab4f6", 0x1F5B3},
 };
 
@@ -38,19 +52,12 @@ struct drcs_conv stb_hmap *dyn_replace_map = NULL;
  * 0 if not set */
 char32_t default_repl_char = 0;
 
-struct drcs_dump_info {
-    int w, h, depth;
-    uint8_t *px;
-    size_t pxsize;
-    const char *md5;
-    bool replaced;
-};
-static void write_drcs_to_file(const struct drcs_dump_info *di)
+static void write_file_to_drcs_dir(const char *filename, const uint8_t *data, size_t data_size)
 {
     const pchar *subdir = PSTR("drcs");
     pchar fpath[384];
     ssize_t wres;
-    int n, fd;
+    int n, fd, dirend;
 
 #ifdef _WIN32
     pchar *curr_dir = get_current_dir_name();
@@ -59,20 +66,15 @@ static void write_drcs_to_file(const struct drcs_dump_info *di)
     const pchar *curr_dir = ".";
 #endif
 
-    n = psnprintf(fpath, sizeof(fpath), PSTR("%s%c%s"), curr_dir, PATHSPECC, subdir);
+    n = psnprintf(fpath, sizeof(fpath), PSTR("%s%c%s%n%c%s"), curr_dir, PATHSPECC, subdir, &dirend, PATHSPECC, filename);
     assert(n + 1 < ARRAY_COUNT(fpath));
 
+    assert(fpath[dirend] == PATHSPECC);
+    fpath[dirend] = '\0';
     mkdir_p(fpath);
+    fpath[dirend] = PATHSPECC;
 
-    /* Filename format is
-     * REPLACED_WIDTH_HEIGHT_DEPTH_MD5.bin
-     */
-    n = psnprintf(fpath, sizeof(fpath), PSTR("%s%c%s%c%d_%d_%d_%d_%s.bin"),
-            curr_dir, PATHSPECC, subdir, PATHSPECC,
-            di->replaced, di->w, di->h, di->depth, u8PC(di->md5));
-    assert(n + 1 < ARRAY_COUNT(fpath));
-
-    fd = plopen(fpath, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    fd = plopen(fpath, O_WRONLY | O_CREAT | O_EXCL | _O_BINARY, 0644);
     if (fd == -1) {
         if (errno != EEXIST) {
             n = errno;
@@ -83,9 +85,9 @@ static void write_drcs_to_file(const struct drcs_dump_info *di)
         goto end;
     }
 
-    wres = plwrite(fd, di->px, di->pxsize);
-    if (wres != di->pxsize) {
-        log_error("Couldn't write all drcs pixel data: %s\n", pstrerror(errno));
+    wres = plwrite(fd, data, data_size);
+    if (wres != data_size) {
+        log_error("Couldn't write all drcs file data: %s\n", pstrerror(errno));
     }
 
     plclose(fd);
@@ -96,6 +98,32 @@ end:
 #endif
 }
 
+enum error drcs_write_to_png(aribcc_drcs_t *drcs)
+{
+    pchar fname[64];
+    enum error err;
+    int d, depth, w, h, n;
+    size_t pxsize, png_data_size;
+    uint8_t *png_data, *px;
+    const char *md5;
+
+    aribcc_drcs_get_size(drcs, &w, &h);
+    aribcc_drcs_get_depth(drcs, &d, &depth),
+    aribcc_drcs_get_pixels(drcs, &px, &pxsize);
+    md5 = aribcc_drcs_get_md5(drcs);
+
+    err = png_encode(w, h, depth, px, pxsize, &png_data, &png_data_size);
+    if (err != NOERR)
+        return err;
+
+    n = psnprintf(fname, sizeof(fname), PSTR("%s.png"), u8PC(md5));
+    assert(n + 1 < ARRAY_COUNT(fname));
+
+    write_file_to_drcs_dir(fname, png_data, png_data_size);
+    free(png_data);
+    return NOERR;
+}
+
 
 /* To convert the raw pixel data to an image:
  * convert -depth [depth] -size [width]x[height] gray:drcs.bin out.png
@@ -104,29 +132,55 @@ static void drcs_dump_char(aribcc_drcsmap_t *map, const aribcc_caption_char_t *c
 {
     assert(chr->type == ARIBCC_CHARTYPE_DRCS || chr->type == ARIBCC_CHARTYPE_DRCS_REPLACED);
 
-    struct drcs_dump_info di = {0};
-    int d;
+    pchar fname[64];
+    int d, depth, w, h, n;
+    size_t pxsize;
+    uint8_t *px;
+    const char *md5;
     aribcc_drcs_t *dr;
+    bool replaced;
 
     dr = aribcc_drcsmap_get(map, chr->drcs_code);
     assert(dr);
 
-    di.replaced = (chr->type == ARIBCC_CHARTYPE_DRCS_REPLACED);
-    aribcc_drcs_get_size(dr, &di.w, &di.h);
-    aribcc_drcs_get_depth(dr, &d, &di.depth),
-    aribcc_drcs_get_pixels(dr, &di.px, &di.pxsize);
-    di.md5 = aribcc_drcs_get_md5(dr);
+    replaced = (chr->type == ARIBCC_CHARTYPE_DRCS_REPLACED);
+    aribcc_drcs_get_size(dr, &w, &h);
+    aribcc_drcs_get_depth(dr, &d, &depth),
+    aribcc_drcs_get_pixels(dr, &px, &pxsize);
+    md5 = aribcc_drcs_get_md5(dr);
 
-    if (di.replaced == false) {
+    if (replaced == false) {
         for (int i = 0; i < ARRAY_COUNT(static_replace_map); i++) {
-            if (strcmp(static_replace_map[i].key, di.md5) == 0) {
-                di.replaced = true;
+            if (strcmp(static_replace_map[i].key, md5) == 0) {
+                replaced = true;
                 break;
             }
         }
     }
 
-    write_drcs_to_file(&di);
+    if (opt_dump_drcs_format == PNG) {
+        uint8_t *png_data;
+        size_t png_data_size;
+
+        enum error err = png_encode(w, h, depth, px, pxsize, &png_data, &png_data_size);
+        if (err != NOERR)
+            return;
+
+        n = psnprintf(fname, sizeof(fname), PSTR("%d_%d_%d_%d_%s.png"),
+                replaced, w, h, depth, u8PC(md5));
+        assert(n + 1 < ARRAY_COUNT(fname));
+
+        write_file_to_drcs_dir(fname, png_data, png_data_size);
+        free(png_data);
+    } else if (opt_dump_drcs_format == BIN) {
+        /* Filename format is
+         * REPLACED_WIDTH_HEIGHT_DEPTH_MD5.bin
+         */
+        n = psnprintf(fname, sizeof(fname), PSTR("%d_%d_%d_%d_%s.bin"),
+                replaced, w, h, depth, u8PC(md5));
+        assert(n + 1 < ARRAY_COUNT(fname));
+        write_file_to_drcs_dir(fname, px, pxsize);
+    }
 }
 
 enum error drcs_dump(const struct subobj_ctx *s)
@@ -140,66 +194,37 @@ enum error drcs_dump(const struct subobj_ctx *s)
             for (uint32_t ci = 0; ci < region->char_count; ci++) {
                 const aribcc_caption_char_t *chr = &region->chars[ci];
 
-                if (chr->type == ARIBCC_CHARTYPE_DRCS || chr->type == ARIBCC_CHARTYPE_DRCS_REPLACED)
+                if (chr->type == ARIBCC_CHARTYPE_DRCS || chr->type == ARIBCC_CHARTYPE_DRCS_REPLACED) {
                     drcs_dump_char(caption->drcs_map, chr);
+                }
             }
         }
     }
     return NOERR;
 }
 
-static void drcs_replace_chr_with_codepoint(aribcc_caption_char_t *chr, const char *md5, char32_t codepoint)
-{
-    chr->type = ARIBCC_CHARTYPE_DRCS_REPLACED;
-    chr->codepoint = codepoint;
-    unicode_to_utf8(codepoint, chr->u8str);
-    if (opt_log_level <= LOG_INFO) {
-#ifdef _WIN32
-        pchar replstr[8];
-        _snwprintf(replstr, ARRAY_COUNT(replstr), L"%s", u8PC(chr->u8str));
-        log_info("Replaced drcs %s to %s\n", u8PC(md5), replstr);
-#else
-        log_info("Replaced drcs %s to %s\n", md5, chr->u8str);
-#endif
-    }
-    return;
-}
-
 /* Currently only those, that are not replaced by libaribcaption will
- * be replaced here. So the replacement hierarchy goes
+ * be replaced here (could be changed later). So the replacement hierarchy goes
  * libaribcaption -> custom user replacements -> custom static replacements -> 'all' replacement
  */
-void drcs_replace(aribcc_drcsmap_t *drcs_map, aribcc_caption_char_t *chr)
+char32_t drcs_get_replacement_ucs4_by_md5(const char *md5)
 {
-    /* libaribcaption does not support adding new or custom drcs mappings.
-     * maybe i should add it?
-     * anyway, hack it here for now */
-    assert(chr->type == ARIBCC_CHARTYPE_DRCS);
-
-    aribcc_drcs_t *d = aribcc_drcsmap_get(drcs_map, chr->drcs_code);
-    assert(d);
-    const char *md5 = aribcc_drcs_get_md5(d);
-
     const struct drcs_conv *di = shgetp_null(dyn_replace_map, md5);
     if (di) {
-        drcs_replace_chr_with_codepoint(chr, md5, di->value);
-        return;
+        return di->value;
     }
 
     for (int i = 0; i < ARRAY_COUNT(static_replace_map); i++) {
         if (strcmp(static_replace_map[i].key, md5) == 0) {
-            drcs_replace_chr_with_codepoint(chr, md5, static_replace_map[i].value);
-            return;
+            return static_replace_map[i].value;
         }
     }
 
     if (default_repl_char != 0) {
-        drcs_replace_chr_with_codepoint(chr, md5, default_repl_char);
-        return;
+        return default_repl_char;
     }
 
-    log_warning("Found no drcs replace char for %s\n", u8PC(md5));
-    return;
+    return 0;
 }
 
 enum error drcs_add_mapping(const char *md5, char32_t codepoint)

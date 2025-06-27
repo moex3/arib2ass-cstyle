@@ -89,6 +89,31 @@ srt -o out.srt --tags --furi
 It's possible to save all options into a config file.
 The option `--dump-config` will save the currently set options into a file that can be later loaded with `--config-file`.
 
+### DRCS replacements
+If you see something like `Found no drcs replacement char for 06cb56043b9c4006bcfbe07cc831feaf. Writing image to file.` when running the program,
+that means an unhandled DRCS character has been encountered. The png image for the character is written into the folder named `drcs`
+under the current working directory named with their md5 hash sum.
+Unhandled characters are default replaced with a space. To use another replacement, use the `--drcs-conv` option with a file (can be specified multiple times),
+or use the `[drcs_conv]` table in the config file. The format for the file, or the config table is as follows:
+
+Each line is of the format `key = replacement_value`. `key` can be the hash sum of the character, or the word `all` or `"*"`, in
+which case all unhandled characters will be replaced by that replacement_value.
+`key` can also be the word `files` in which case the value is a TOML array of files to load replacement characters from (this is only valid from the config file).
+replacement_value can be either a unicode codepoint number, like `0x1F98B` or the character itself in quotes like `"🦋"`
+Currently only a single character can be used as replacement.
+For example:
+
+```toml
+# Only in the config file
+[drcs_conv]
+files = [ "./file1.toml", "./file2.toml" ]
+
+# Valid in config file or as a file to --drcs-conv
+06cb56043b9c4006bcfbe07cc831feaf = 0x1F50A
+33d4c5243a45503d43fbb858a728664d = "📱"
+all = "🦋"
+```
+
 ## Issues
 This software is still in early developement, so it might crash or produce incorrect output.
 If that happens, feel free to create an issue :)

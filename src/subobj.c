@@ -7,6 +7,7 @@
 #include "stb_ds.h"
 
 #include "log.h"
+#include "opts.h"
 #include "util.h"
 #include "drcs.h"
 
@@ -107,6 +108,54 @@ static void aribcc_caption_char_copy_to_so(struct subobj_caption_char *dst, cons
     };
 }
 
+static void replace_drcs(aribcc_drcsmap_t *drmap, aribcc_caption_char_t *chr)
+{
+    assert(chr->type == ARIBCC_CHARTYPE_DRCS);
+
+    aribcc_drcs_t *drcs = aribcc_drcsmap_get(drmap, chr->drcs_code);
+    assert(drcs);
+
+    const char *md5 = aribcc_drcs_get_md5(drcs);
+    assert(md5);
+
+    chr->type = ARIBCC_CHARTYPE_DRCS_REPLACED;
+    char32_t rc = drcs_get_replacement_ucs4_by_md5(md5);
+    /* Found */
+    if (rc != 0) {
+        chr->codepoint = rc;
+        unicode_to_utf8(rc, chr->u8str);
+
+        if (opt_log_level <= LOG_INFO) {
+#ifdef _WIN32
+            pchar replstr[8];
+            _snwprintf(replstr, ARRAY_COUNT(replstr), L"%s", u8PC(chr->u8str));
+            log_info("Replaced drcs %s to %s\n", u8PC(md5), replstr);
+#else
+            log_info("Replaced drcs %s to %s\n", md5, chr->u8str);
+#endif
+        }
+        return;
+    }
+
+    if (opt_dump_drcs == true && (opt_srt_do == false && opt_ass_do == false)) {
+        /* If we are already dumping all of the drcs, don't output the warning */
+        return;
+    }
+
+    /* Not found */
+    log_warning("Found no drcs replacement char for %s. Writing image to file.\n", u8PC(md5));
+
+    /* full width space character, as normal space won't get
+     * rendered at the beginning of the line */
+    chr->codepoint = 0x3000;
+    chr->u8str[0] = 0xE3;
+    chr->u8str[1] = 0x80;
+    chr->u8str[2] = 0x80;
+    chr->u8str[3] = '\0';
+
+    drcs_write_to_png(drcs);
+}
+
 static void aribcc_caption_region_copy_to_so_drcs_replace(struct subobj_caption_region *dst, aribcc_caption_region_t *src, aribcc_drcsmap_t *drmap)
 {
     *dst = (struct subobj_caption_region){
@@ -124,7 +173,7 @@ static void aribcc_caption_region_copy_to_so_drcs_replace(struct subobj_caption_
         aribcc_caption_char_t *src_char = &src->chars[j];
 
         if (src_char->type == ARIBCC_CHARTYPE_DRCS)
-            drcs_replace(drmap, src_char);
+            replace_drcs(drmap, src_char);
 
         aribcc_caption_char_copy_to_so(dst_char, src_char);
     }

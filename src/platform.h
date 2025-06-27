@@ -40,6 +40,7 @@ typedef wchar_t pchar;
 #define plopen _wopen
 #define plclose _close
 #define plwrite _write
+#define reallocarray(ptr, n, size) (realloc(ptr, n * size))
 
 /* Convert a pchar into an utf8 text using a static buffer */
 #define PCu8_BUFFER_SIZE 1024
@@ -98,6 +99,7 @@ typedef char pchar;
 #define plopen open
 #define plclose close
 #define plwrite write
+#define _O_BINARY (0)
 
 #define PCu8(pc) (pc)
 #define u8PCmem(u8) (u8)

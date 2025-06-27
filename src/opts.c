@@ -19,6 +19,7 @@ static pchar *opt_output = NULL;
 static pchar *opt_dump_config = NULL;
 enum log_level opt_log_level = LOG_MSG;
 bool opt_dump_drcs = false;
+enum dump_drcs_format opt_dump_drcs_format = BIN;
 
 bool opt_ass_do = false;
 const pchar *opt_ass_font_path = NULL;
@@ -57,6 +58,7 @@ enum short_opts {
     SOPT_VERBOSE = 'v',
     SOPT_QUIET = 'q',
     SOPT_DUMP_DRCS = 0x102,
+    SOPT_DUMP_DRCS_PNG = 0x103,
     SOPT_DRCS_CONV = 'D',
     SOPT_ASS_NO_OPTIMIZE = 'Z',
     SOPT_ASS_FORCE_BOLD = 'b',
@@ -77,14 +79,15 @@ enum short_opts {
 /* '+' to stop processing args at the first non-opt argument */
 static const pchar arg_string_pre[] = PSTR("+c:o:hqvD:");
 static const struct option arg_options_pre[] = {
-    { PSTR("config-file"), required_argument, NULL, SOPT_CONFIG_FILE },
-    { PSTR("dump-config"), required_argument, NULL, SOPT_DUMP_CONFIG },
-    { PSTR("help"),        no_argument,       NULL, SOPT_HELP },
-    { PSTR("output"),      required_argument, NULL, SOPT_OUTPUT },
-    { PSTR("verbose"),     no_argument,       NULL, SOPT_VERBOSE },
-    { PSTR("quiet"),       no_argument,       NULL, SOPT_QUIET },
-    { PSTR("dump-drcs"),   no_argument,       NULL, SOPT_DUMP_DRCS },
-    { PSTR("drcs-conv"),   required_argument, NULL, SOPT_DRCS_CONV },
+    { PSTR("config-file"),   required_argument, NULL, SOPT_CONFIG_FILE },
+    { PSTR("dump-config"),   required_argument, NULL, SOPT_DUMP_CONFIG },
+    { PSTR("help"),          no_argument,       NULL, SOPT_HELP },
+    { PSTR("output"),        required_argument, NULL, SOPT_OUTPUT },
+    { PSTR("verbose"),       no_argument,       NULL, SOPT_VERBOSE },
+    { PSTR("quiet"),         no_argument,       NULL, SOPT_QUIET },
+    { PSTR("dump-drcs"),     no_argument,       NULL, SOPT_DUMP_DRCS },
+    { PSTR("dump-drcs-png"), no_argument,       NULL, SOPT_DUMP_DRCS_PNG },
+    { PSTR("drcs-conv"),     required_argument, NULL, SOPT_DRCS_CONV },
     { 0 },
 };
 
@@ -131,7 +134,8 @@ static void print_help()
             PSTR("  -o   --output             Output for all outputs (should be a directory)\n")
             PSTR("  -v   --verbose            Verbose output\n")
             PSTR("  -q   --quiet              Quiet output\n")
-            PSTR("       --dump-drcs          Write all drcs pixel data found to ./drcs/\n")
+            PSTR("       --dump-drcs          Write all drcs pixel data found to ./drcs/ in binary format\n")
+            PSTR("       --dump-drcs-png      Write all drcs character images found to ./drcs/ in png format\n")
             PSTR("  -D   --drcs-conv          Accepts a toml file, which contains replacement mappings for drcs characters\n")
             PSTR("                            Can be specified multiple times\n")
             PSTR("\n")
@@ -200,6 +204,7 @@ static enum error dump_config(const pchar *outfile)
         fprintf(f, "logging = %s\n", "\"quiet\"");
 
     fprintf(f, "dump-drcs = %s\n", B8(opt_dump_drcs));
+    fprintf(f, "dump-drcs-format = \"%s\"\n", (opt_dump_drcs_format == PNG) ? "png" : "bin");
 
     if (opt_ass_do) {
 
@@ -229,7 +234,6 @@ static enum error dump_config(const pchar *outfile)
     }
 
     fprintf(f, "\n[drcs_conv]\n");
-    fprintf(f, "# \n");
 
     fclose(f);
     return NOERR;
@@ -258,6 +262,15 @@ static enum error parse_toml(toml_table_t *toml)
     val = toml_table_bool(toml, "dump-drcs");
     if (val.ok) {
         opt_dump_drcs = val.u.b;
+    }
+    val = toml_table_string(toml, "dump-drcs-format");
+    if (val.ok) {
+        if (strcmp(val.u.s, "bin") == 0) {
+            opt_dump_drcs_format = BIN;
+        } else if (strcmp(val.u.s, "png") == 0) {
+            opt_dump_drcs_format = PNG;
+        }
+        free(val.u.s);
     }
 
     subt = toml_table_table(toml, "ass");
@@ -440,6 +453,11 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
             break;
         case SOPT_DUMP_DRCS:
             opt_dump_drcs = true;
+            opt_dump_drcs_format = BIN;
+            break;
+        case SOPT_DUMP_DRCS_PNG:
+            opt_dump_drcs = true;
+            opt_dump_drcs_format = PNG;
             break;
         case SOPT_HELP:
             print_help();

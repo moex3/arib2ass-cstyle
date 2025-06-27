@@ -14,7 +14,14 @@
 void drcs_free();
 
 enum error drcs_dump(const struct subobj_ctx *s);
-void drcs_replace(aribcc_drcsmap_t *drcs_map, aribcc_caption_char_t *chr);
+/* Default write it to ./drcs/md5hash.png */
+enum error drcs_write_to_png(aribcc_drcs_t *drcs);
+
+/*
+ * Get a unicode codepoint for drcs replacement.
+ * A return value of 0 means the replacement was not found.
+ */
+char32_t drcs_get_replacement_ucs4_by_md5(const char *md5);
 
 /* If md5 is NULL, add it as the default replacement char */
 enum error drcs_add_mapping(const char *md5, char32_t codepoint);

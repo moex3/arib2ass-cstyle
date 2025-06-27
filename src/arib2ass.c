@@ -144,6 +144,7 @@ int fnmain(int argc, pchar **argv)
 #elif defined(_WIN32)
     (void)_setmode(_fileno(stdout), _O_U16TEXT);
     (void)_setmode(_fileno(stderr), _O_U16TEXT);
+    _set_printf_count_output(1);
 #endif
 
     err = opts_parse_cmdline(argc, argv);

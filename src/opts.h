@@ -7,6 +7,10 @@
 
 extern enum log_level opt_log_level;
 extern bool opt_dump_drcs;
+enum dump_drcs_format {
+    BIN, PNG,
+};
+extern enum dump_drcs_format opt_dump_drcs_format;
 
 extern bool opt_ass_do;
 extern const pchar *opt_ass_font_path;
