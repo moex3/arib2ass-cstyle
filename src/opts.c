@@ -21,6 +21,9 @@ enum log_level opt_log_level = LOG_MSG;
 bool opt_dump_drcs = false;
 enum dump_drcs_format opt_dump_drcs_format = BIN;
 
+int64_t opt_probesize = 64 * 1024 * 1024;
+int64_t opt_analyzeduration = 0;
+
 bool opt_ass_do = false;
 const pchar *opt_ass_font_path = NULL;
 const pchar *opt_ass_font_face = NULL;
@@ -62,6 +65,8 @@ enum short_opts {
     SOPT_DUMP_DRCS = 0x102,
     SOPT_DUMP_DRCS_PNG = 0x103,
     SOPT_DRCS_CONV = 'D',
+    SOPT_PROBESIZE = 0x104,
+    SOPT_ANALYZEDURATION = 0x105,
 
     SOPT_ASS_NO_OPTIMIZE = 'Z',
     SOPT_ASS_FORCE_BOLD = 'b',
@@ -84,15 +89,17 @@ enum short_opts {
 /* '+' to stop processing args at the first non-opt argument */
 static const pchar arg_string_pre[] = PSTR("+c:o:hqvD:");
 static const struct option arg_options_pre[] = {
-    { PSTR("config-file"),   required_argument, NULL, SOPT_CONFIG_FILE },
-    { PSTR("dump-config"),   required_argument, NULL, SOPT_DUMP_CONFIG },
-    { PSTR("help"),          no_argument,       NULL, SOPT_HELP },
-    { PSTR("output"),        required_argument, NULL, SOPT_OUTPUT },
-    { PSTR("verbose"),       no_argument,       NULL, SOPT_VERBOSE },
-    { PSTR("quiet"),         no_argument,       NULL, SOPT_QUIET },
-    { PSTR("dump-drcs"),     no_argument,       NULL, SOPT_DUMP_DRCS },
-    { PSTR("dump-drcs-png"), no_argument,       NULL, SOPT_DUMP_DRCS_PNG },
-    { PSTR("drcs-conv"),     required_argument, NULL, SOPT_DRCS_CONV },
+    { PSTR("config-file"),     required_argument, NULL, SOPT_CONFIG_FILE },
+    { PSTR("dump-config"),     required_argument, NULL, SOPT_DUMP_CONFIG },
+    { PSTR("help"),            no_argument,       NULL, SOPT_HELP },
+    { PSTR("output"),          required_argument, NULL, SOPT_OUTPUT },
+    { PSTR("verbose"),         no_argument,       NULL, SOPT_VERBOSE },
+    { PSTR("quiet"),           no_argument,       NULL, SOPT_QUIET },
+    { PSTR("dump-drcs"),       no_argument,       NULL, SOPT_DUMP_DRCS },
+    { PSTR("dump-drcs-png"),   no_argument,       NULL, SOPT_DUMP_DRCS_PNG },
+    { PSTR("drcs-conv"),       required_argument, NULL, SOPT_DRCS_CONV },
+    { PSTR("probesize"),       required_argument, NULL, SOPT_PROBESIZE },
+    { PSTR("analyzeduration"), required_argument, NULL, SOPT_ANALYZEDURATION },
     { 0 },
 };
 
@@ -156,6 +163,9 @@ static void print_help()
             PSTR("       --dump-drcs-png      Write all drcs character images found to ./drcs/ in png format\n")
             PSTR("  -D   --drcs-conv          Accepts a toml file, which contains replacement mappings for drcs characters\n")
             PSTR("                            Can be specified multiple times\n")
+            PSTR("       --probesize          Set the ffmpeg option 'probesize' in bytes (%ld)\n")
+            PSTR("                            Increase this if the subtitle stream cannot be found\n")
+            PSTR("       --analyzeduration    Set the ffmpeg option 'analyzeduration' in microseconds (%ld)\n")
             PSTR("\n")
             PSTR("ASS OPTIONS:\n")
             PSTR("  -o   --output             Output resulting file into this path, or directory\n")
@@ -178,6 +188,7 @@ static void print_help()
             PSTR("  -t   --tags               Write formatting tags (%s)\n")
             PSTR("  -f   --furi               Try to write furigana in parenthesis. EXPERIMENTAL. (%s)\n")
             PSTR("\n"),
+            opt_probesize, opt_analyzeduration,
             val_font_path, val_font_face, B(!opt_ass_optimize), B(opt_ass_force_bold), B(opt_ass_force_border),
             B(opt_ass_merge_regions), B(opt_ass_debug_boxes), B(!opt_ass_center_spacing), val_constant_spacing,
             B(opt_ass_shift_ruby), B(opt_ass_fs_adjust), u8PC(opt_ass_ycbcr), B(opt_srt_tags), B(opt_srt_furi)
@@ -227,6 +238,9 @@ static enum error dump_config(const pchar *outfile)
 
     fprintf(f, "dump-drcs = %s\n", B8(opt_dump_drcs));
     fprintf(f, "dump-drcs-format = \"%s\"\n", (opt_dump_drcs_format == PNG) ? "png" : "bin");
+
+    fprintf(f, "probesize = %ld\n", opt_probesize);
+    fprintf(f, "analyzeduration = %ld\n", opt_analyzeduration);
 
     if (opt_ass_do) {
 
@@ -295,6 +309,23 @@ static enum error parse_toml(toml_table_t *toml)
             opt_dump_drcs_format = PNG;
         }
         free(val.u.s);
+    }
+
+    val = toml_table_int(toml, "probesize");
+    if (val.ok) {
+        if (val.u.i < 32) {
+            log_warning("probesize cannot be smaller than 32. Ignoring\n");
+        } else {
+            opt_probesize = val.u.i;
+        }
+    }
+    val = toml_table_int(toml, "analyzeduration");
+    if (val.ok) {
+        if (val.u.i < 0) {
+            log_warning("analyzeduration cannot be negative. Ignoring\n");
+        } else {
+            opt_analyzeduration = val.u.i;
+        }
     }
 
     subt = toml_table_table(toml, "ass");
@@ -470,7 +501,8 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
     const pchar *config_file_path = NULL;
     /* Don't print invalid option messages */
     opterr = 0;
-
+    int64_t n;
+    char *endp;
 
     for (;;) {
         int c = getopt_long(argc, argv, arg_string_pre, arg_options_pre, NULL);
@@ -480,6 +512,10 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
         switch (c) {
         case SOPT_CONFIG_FILE:
             config_file_path = optarg;
+            /* Parse it now, so the options later can overwrite it */
+            err = parse_config_file(config_file_path);
+            if (err != NOERR)
+                goto end;
             break;
         case SOPT_DUMP_CONFIG:
             opt_dump_config = optarg;
@@ -505,17 +541,39 @@ static enum error parse_config_global_opts(int argc, pchar **argv)
             opt_dump_drcs = true;
             opt_dump_drcs_format = PNG;
             break;
+        case SOPT_PROBESIZE:
+        case SOPT_ANALYZEDURATION:
+            errno = 0;
+            n = strtol(optarg, &endp, 10);
+            if (*endp != '\0') {
+                log_warning("Option must be a number.\n");
+                return ERR_OPT_BAD_ARG;
+            }
+            if (errno == 0) {
+                if (c == SOPT_PROBESIZE) {
+                    if (n < 32) {
+                        log_warning("probesize cannot be smaller than 32.\n");
+                        return ERR_OPT_BAD_ARG;
+                    }
+                    opt_probesize = n;
+                } else if (c == SOPT_ANALYZEDURATION) {
+                    if (n < 0) {
+                        log_warning("analyzeduration cannot be negative.\n");
+                        return ERR_OPT_BAD_ARG;
+                    }
+                    opt_analyzeduration = n;
+                } else {
+                    return ERR_OPT_BAD_ARG;
+                }
+            } else {
+                return ERR_OPT_BAD_ARG;
+            }
+            break;
         case SOPT_HELP:
             print_help();
             err = ERR_OPT_SHOULD_EXIT;
             goto end;
         }
-    }
-
-    if (config_file_path) {
-        err = parse_config_file(config_file_path);
-        if (err != NOERR)
-            goto end;
     }
 
     /* Add files from the cmd after the files from config files / config

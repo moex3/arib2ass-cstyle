@@ -1,6 +1,7 @@
 #ifndef A2AC_OPTS_H
 #define A2AC_OPTS_H
 #include <stdbool.h>
+#include <stdint.h>
 #include "platform.h"
 #include "error.h"
 #include "defs.h"
@@ -14,6 +15,9 @@ extern enum dump_drcs_format opt_dump_drcs_format;
 
 extern bool opt_ass_do;
 extern const pchar *opt_ass_font_path;
+
+extern int64_t opt_probesize;
+extern int64_t opt_analyzeduration;
 
 /* Can be queried with fc-query */
 extern const pchar *opt_ass_font_face;

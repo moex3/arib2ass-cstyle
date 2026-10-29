@@ -8,14 +8,12 @@
 #include "opts.h"
 #include "util.h"
 
-/* Can be increased if the subtitle stream is not found */
-#define PROBESIZE ( 64*1024*1024 )
-
 static void find_stream_infos(AVFormatContext *avformat_context, int *out_sub_idx, int *out_video_idx)
 {
     int  ret;
 
-    av_opt_set_int(avformat_context, "probesize", PROBESIZE, 0);
+    av_opt_set_int(avformat_context, "probesize", opt_probesize, 0);
+    av_opt_set_int(avformat_context, "analyzeduration", opt_analyzeduration, 0);
 
     ret = avformat_find_stream_info(avformat_context, NULL);
     if (ret < 0) {
@@ -26,6 +24,13 @@ static void find_stream_infos(AVFormatContext *avformat_context, int *out_sub_id
     for (size_t i = 0; i < avformat_context->nb_streams; i++) {
         AVStream* stream = avformat_context->streams[i];
         AVCodecParameters* codec_params = stream->codecpar;
+
+        if (opt_log_level <= LOG_DEBUG) {
+            pchar media_type_str[256];
+            int n = psnprintf(media_type_str, ARRAY_COUNT(media_type_str), "%s", u8PC(av_get_media_type_string(codec_params->codec_type)));
+            assert(n + 1 < ARRAY_COUNT(media_type_str));
+            log_debug("Found stream [%zd]: %s (%s)\n", i, media_type_str, u8PC(avcodec_get_name(codec_params->codec_id)));
+        }
 
         if (codec_params->codec_type == AVMEDIA_TYPE_VIDEO) {
             *out_video_idx = stream->index;
